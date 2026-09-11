@@ -460,6 +460,12 @@ function InsightsCard({ ai }: { ai: string[] }) {
 
 function ChartCard({ cfg, rows }: { cfg: any; rows: Row[] }) {
   const data = chartData(rows, cfg);
+  const categoryData = data.filter(
+    (point): point is { name: string; value: number } => 'name' in point,
+  );
+  const scatterData = data.filter(
+    (point): point is { x: number; y: number } => 'x' in point,
+  );
 
   return (
     <div className="card min-h-[330px] p-5">
@@ -476,7 +482,7 @@ function ChartCard({ cfg, rows }: { cfg: any; rows: Row[] }) {
       <div className="h-[250px]">
         <ResponsiveContainer width="100%" height="100%">
           {cfg.kind === 'bar' ? (
-            <BarChart data={data}>
+            <BarChart data={categoryData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 10 }} />
@@ -484,7 +490,7 @@ function ChartCard({ cfg, rows }: { cfg: any; rows: Row[] }) {
               <Bar dataKey="value" fill="#2563eb" radius={[5, 5, 0, 0]} />
             </BarChart>
           ) : cfg.kind === 'line' ? (
-            <LineChart data={data}>
+            <LineChart data={categoryData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} />
@@ -492,7 +498,7 @@ function ChartCard({ cfg, rows }: { cfg: any; rows: Row[] }) {
               <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={3} dot={false} />
             </LineChart>
           ) : cfg.kind === 'area' ? (
-            <AreaChart data={data}>
+            <AreaChart data={categoryData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} />
@@ -505,12 +511,12 @@ function ChartCard({ cfg, rows }: { cfg: any; rows: Row[] }) {
               <XAxis type="number" dataKey="x" tick={{ fontSize: 10 }} />
               <YAxis type="number" dataKey="y" tick={{ fontSize: 10 }} />
               <Tooltip />
-              <Scatter data={data} fill="#2563eb" />
+              <Scatter data={scatterData} fill="#2563eb" />
             </ScatterChart>
           ) : (
             <PieChart>
-              <Pie data={data} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2}>
-                {data.map((_: any, index: number) => (
+              <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2}>
+                {categoryData.map((_, index) => (
                   <Cell
                     key={index}
                     fill={['#2563eb', '#64748b', '#0f766e', '#7c3aed', '#ea580c'][index % 5]}
