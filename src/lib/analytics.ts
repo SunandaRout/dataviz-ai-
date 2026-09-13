@@ -14,6 +14,61 @@ export function chartData(rows:Row[],cfg:ChartConfig){if(cfg.kind==='scatter')re
 export function insights(rows:Row[],info:ColumnInfo[]){const nums=numCols(info),cats=catCols(info);const out:string[]=[];if(nums[0]){const s=summarize(rows,nums[0].name)!;out.push(`${nums[0].name} totals ${s.sum.toLocaleString(undefined,{maximumFractionDigits:2})}, with an average of ${s.mean.toLocaleString(undefined,{maximumFractionDigits:2})}.`)}if(cats[0]&&nums[0]){const m=new Map<string,number>();rows.forEach(r=>{const k=String(r[cats[0].name]??'Unknown'),v=Number(r[nums[0].name]);if(Number.isFinite(v))m.set(k,(m.get(k)||0)+v)});const top=[...m.entries()].sort((a,b)=>b[1]-a[1])[0];if(top)out.push(`${top[0]} is the leading ${cats[0].name} for ${nums[0].name}, contributing ${top[1].toLocaleString(undefined,{maximumFractionDigits:2})}.`)}if(info.some(c=>c.missing))out.push(`Data quality watch: ${info.filter(c=>c.missing).length} columns contain missing values and should be reviewed.`);return out}
 export function formatValue(v:number){if(Math.abs(v)>=1e9)return`$${(v/1e9).toFixed(2)}B`;if(Math.abs(v)>=1e6)return`$${(v/1e6).toFixed(2)}M`;if(Math.abs(v)>=1e3)return`$${(v/1e3).toFixed(1)}K`;return v.toLocaleString(undefined,{maximumFractionDigits:2})}
 
+export type AiConversationTurn={question:string;answer:string};
+
+export function buildDatasetContext(
+  datasetName:string,
+  rows:Row[],
+  info:ColumnInfo[],
+  filteredRows:Row[]=rows,
+  conversation:AiConversationTurn[]=[]
+){
+  const duplicateCount=rows.length-new Set(rows.map(row=>JSON.stringify(row))).size;
+  const numericStatistics=info.filter(column=>column.type==='number').map(column=>({
+    column:column.name,
+    ...summarize(rows,column.name),
+  }));
+  const categoricalInformation=info
+    .filter(column=>column.type==='category'||column.type==='text')
+    .slice(0,12)
+    .map(column=>{
+      const counts=new Map<string,number>();
+      rows.forEach(row=>{const value=String(row[column.name]??'Missing');counts.set(value,(counts.get(value)||0)+1)});
+      return{column:column.name,unique:column.unique,topValues:[...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8).map(([value,count])=>({value,count}))};
+    });
+  const dateColumns=info.filter(column=>column.type==='date').map(column=>{
+    const dates=rows.map(row=>new Date(row[column.name])).filter(date=>!Number.isNaN(date.getTime())).sort((a,b)=>a.getTime()-b.getTime());
+    return{column:column.name,min:dates[0]?.toISOString(),max:dates.at(-1)?.toISOString()};
+  });
+  const groupedNumericResults=info.filter(column=>column.type==='category'||column.type==='text').slice(0,8).flatMap(category=>
+    info.filter(column=>column.type==='number').slice(0,8).map(number=>{
+      const totals=new Map<string,number>();
+      rows.forEach(row=>{const value=Number(row[number.name]);if(Number.isFinite(value)){const key=String(row[category.name]??'Missing');totals.set(key,(totals.get(key)||0)+value)}});
+      return{groupBy:category.name,measure:number.name,topGroups:[...totals.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10).map(([group,total])=>({group,total}))};
+    }),
+  );
+
+  return JSON.stringify({
+    datasetName,
+    rowCount:rows.length,
+    columnCount:info.length,
+    columns:info,
+    missingValues:info.filter(column=>column.missing>0).map(column=>({column:column.name,count:column.missing})),
+    duplicateCount,
+    numericStatistics,
+    categoricalInformation,
+    dateColumns,
+    groupedNumericResults,
+    filteredRowCount:filteredRows.length,
+    sampleRows:filteredRows.slice(0,8),
+    calculatedResults:{
+      filteredNumericStatistics:info.filter(column=>column.type==='number').map(column=>({column:column.name,...summarize(filteredRows,column.name)})),
+      filteredRows:filteredRows.slice(0,40),
+    },
+    conversation:conversation.slice(-6),
+  },null,2);
+}
+
 export function askAI(question:string,rows:Row[],info:ColumnInfo[]){
   const q=question.trim().toLowerCase();
   if(!q)return 'Please enter a question about your uploaded dataset.';

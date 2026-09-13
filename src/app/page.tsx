@@ -46,7 +46,8 @@ import {
   insights,
   formatValue,
   summarize,
-  askAI,
+  buildDatasetContext,
+  AiConversationTurn,
 } from '@/lib/analytics';
 
 const demo: Row[] = Array.from({ length: 180 }, (_, i) => {
@@ -95,6 +96,8 @@ export default function Home() {
   const [filter, setFilter] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
   const [aiAnswer, setAiAnswer] = useState('');
+  const [aiError, setAiError] = useState('');
+  const [conversation, setConversation] = useState<AiConversationTurn[]>([]);
   const [asking, setAsking] = useState(false);
 
   const info = useMemo(() => profile(rows), [rows]);
@@ -129,22 +132,46 @@ export default function Home() {
       setName(fileName);
       setFilter({});
       setAiAnswer('');
+      setAiError('');
+      setConversation([]);
       setQuery('');
       setTab('Dashboard');
     });
   };
 
-  const handleAsk = () => {
+  const handleAsk = async () => {
     const question = query.trim();
     if (!question || asking) return;
+    if (!rows.length) {
+      setAiError('Upload a dataset before asking AI a question.');
+      return;
+    }
 
     setAsking(true);
     setAiAnswer('');
+    setAiError('');
 
-    window.setTimeout(() => {
-      setAiAnswer(askAI(question, filtered, info));
+    try {
+      const context = buildDatasetContext(name, rows, info, filtered, conversation);
+      const response = await fetch('/api/ask-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, context }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || (response.status === 429 ? 'The AI service is busy. Please try again shortly.' : 'The AI request failed. Please try again.'));
+      }
+      if (typeof data?.answer !== 'string' || !data.answer.trim()) {
+        throw new Error('The AI returned an empty response. Please try again.');
+      }
+      setAiAnswer(data.answer);
+      setConversation((previous) => [...previous, { question, answer: data.answer }].slice(-6));
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : 'Unable to reach the AI service. Check your connection and try again.');
+    } finally {
       setAsking(false);
-    }, 250);
+    }
   };
 
   const resetFilters = () => setFilter({});
@@ -154,6 +181,8 @@ export default function Home() {
     setName('demo_sales_dataset.csv');
     setFilter({});
     setAiAnswer('');
+    setAiError('');
+    setConversation([]);
     setQuery('');
     setTab('Dashboard');
   };
@@ -430,6 +459,11 @@ export default function Home() {
               {aiAnswer && (
                 <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-sm leading-6 text-slate-700">
                   <span className="font-semibold text-blue-700">AI Answer:</span> {aiAnswer}
+                </div>
+              )}
+              {aiError && (
+                <div className="mt-3 rounded-xl border border-red-100 bg-red-50 p-4 text-sm leading-6 text-red-700">
+                  {aiError}
                 </div>
               )}
             </div>
